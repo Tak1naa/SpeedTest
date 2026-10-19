@@ -1,0 +1,13 @@
+diff --git a/docker/standalone.php b/docker/standalone.php
+--- a/docker/standalone.php
++++ b/docker/standalone.php
+@@ -85,6 +85,8 @@ function drawMeter(c,amount,bk,fg,progress,prog){
+ 	var ctx=c.getContext("2d");
+ 	var dp=window.devicePixelRatio||1;
+-	var cw=c.clientWidth*dp, ch=c.clientHeight*dp;
++	// Canvas bitmap dimensions are integers. Fractional DPR otherwise makes
++	// the equality test fail and resets both bitmaps on every frame.
++	var cw=Math.floor(c.clientWidth*dp), ch=Math.floor(c.clientHeight*dp);
+ 	var sizScale=ch*0.0055;
+ 	if(c.width==cw&&c.height==ch){
+ 		ctx.clearRect(0,0,cw,ch);

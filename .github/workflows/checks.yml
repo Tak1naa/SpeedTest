@@ -1,0 +1,41 @@
+name: Source checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: bash tests/offline-check.sh
+      - name: Validate Compose (dummy CI salt, no service start)
+        run: ST_LOG_SALT=ci-only-not-a-production-secret docker compose config -q
+  container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ST_LOG_SALT: ci-only-not-a-production-secret
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build from public bases
+        run: docker compose build --pull
+      - name: Prepare disposable loopback certificate
+        run: |
+          mkdir -p tls
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+            -subj /CN=localhost -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' \
+            -keyout tls/server.key -out tls/server.crt
+          chmod 600 tls/server.key
+      - name: Start and check public configuration
+        run: |
+          docker compose up -d --wait --wait-timeout 90
+          curl --fail --cacert tls/server.crt https://127.0.0.1:8443/health.php
+          curl --fail --cacert tls/server.crt https://127.0.0.1:8443/coffee-qr.svg >/dev/null
+          test "$(curl --cacert tls/server.crt -s -o /dev/null -w '%{http_code}' -H 'Host: rejected.example' https://127.0.0.1:8443/)" = 403
+          docker compose exec -T speedtest php -l /speedtest/backend/rate_limit.php
+      - name: Stop disposable services
+        if: always()
+        run: docker compose down

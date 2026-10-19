@@ -1,0 +1,23 @@
+# Public standalone build; pin the base digest when promoting a deployment.
+ARG PHP_IMAGE=php:8.3-fpm-alpine
+FROM ${PHP_IMAGE}
+RUN apk upgrade --no-cache \
+    && apk add --no-cache apache2 apache2-proxy apache2-ssl bash \
+    && apk add --no-cache --virtual .redis-build $PHPIZE_DEPS \
+    && pecl install redis-6.1.0 \
+    && docker-php-ext-enable redis \
+    && apk del .redis-build
+COPY backend/ /speedtest/backend/
+COPY *.js favicon.ico /speedtest/
+COPY docker/standalone.php docker/health.php /speedtest/
+COPY docker/entrypoint.sh /entrypoint.sh
+COPY docker/speedtest-security.conf /etc/apache2/speedtest-security.conf
+COPY docker/speedtest.ini /usr/local/etc/php/conf.d/speedtest.ini
+COPY docker/alpine-candidate-httpd.conf /etc/apache2/httpd.conf
+COPY docker/alpine-candidate-fpm.conf /usr/local/etc/php-fpm.d/zz-candidate.conf
+COPY docker/alpine-candidate-run.sh /usr/local/bin/candidate-foreground
+COPY assets/coffee-qr.svg /run/speedtest-assets/coffee-qr.svg
+# Only replace the platform-specific process launcher; reuse upstream copying logic.
+RUN sed -i 's/^apache2-foreground$/exec bash \/usr\/local\/bin\/candidate-foreground/' /entrypoint.sh
+ENV MODE=standalone TELEMETRY=false DISABLE_IPINFO=true WEBPORT=80 TITLE=LibreSpeed
+CMD ["bash", "/entrypoint.sh"]

@@ -1,0 +1,72 @@
+name: speedtest
+services:
+  speedtest:
+    image: speedtest-web:0.1
+    build:
+      context: ./upstream
+      dockerfile: Dockerfile.alpine-candidate
+      args:
+        PHP_IMAGE: ${PHP_IMAGE:-php:8.3-fpm-alpine}
+    environment:
+      MODE: standalone
+      TITLE: Tak1na的自建测速
+      TELEMETRY: "false"
+      DISABLE_IPINFO: "true"
+      WEBPORT: "80"
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: "16379"
+      ST_LOG_SALT: ${ST_LOG_SALT:?Set a random ST_LOG_SALT in .env}
+    network_mode: host
+    restart: unless-stopped
+    stop_signal: SIGTERM
+    read_only: true
+    cap_drop: [NET_RAW]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 1g
+    pids_limit: 128
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./tls/server.crt:/run/speedtest-tls/server.crt:ro
+      - ./tls/server.key:/run/speedtest-tls/server.key:ro
+    tmpfs:
+      - /run/apache2:size=8m
+      - /var/lock/apache2:size=8m
+      - /var/log/apache2:size=8m
+      - /var/www/html:size=16m
+      - /tmp:size=256m,mode=1777
+    healthcheck:
+      test: [CMD, php, -r, 'exit(@file_get_contents("http://127.0.0.1:8080/health.php") === ''{"status":"ok"}'' ? 0 : 1);']
+      interval: 30s
+      timeout: 3s
+      start_period: 20s
+      retries: 3
+    logging:
+      driver: journald
+
+  redis:
+    image: speedtest-redis:0.1
+    build:
+      context: ./deploy
+      dockerfile: Dockerfile.redis
+      args:
+        REDIS_BASE_IMAGE: ${REDIS_BASE_IMAGE:-redis:7.4-alpine}
+    command: [redis-server, --bind, 127.0.0.1, --port, "16379", --aclfile, /usr/local/etc/redis/speedtest.acl, --save, "", --appendonly, "no", --maxmemory, 64mb, --maxmemory-policy, noeviction]
+    network_mode: host
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /data:size=8m,mode=1777
+      - /tmp:size=8m,mode=1777
+    mem_limit: 128m
+    pids_limit: 64
+    healthcheck:
+      test: [CMD, redis-cli, -p, "16379", ping]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    logging:
+      driver: journald
