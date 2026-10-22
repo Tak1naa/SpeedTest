@@ -1,0 +1,18 @@
+name: Feature request / 改进建议
+description: Explain a focused use case and its tradeoffs
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and proposed outcome
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope, alternatives and security/performance impact
+      description: Prefer reusing upstream capabilities and small changes over replacing the measurement engine.
+    validations:
+      required: true

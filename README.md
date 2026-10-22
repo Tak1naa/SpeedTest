@@ -1,6 +1,24 @@
-# Tak1na的自建测速 · v0.1
+# Tak1na的自建测速 · v0.1.0
 
-基于 [bg6cq/speedtest](https://github.com/bg6cq/speedtest) 的单节点测速站，保留 LibreSpeed 原有前端引擎、Worker 与测速算法，仅增加中文界面、会话保护和部署约束。当前版本是**校园 IPv4 试运行版**，不是完整公网生产上线声明。
+[![Source checks](https://github.com/Tak1naa/SpeedTest/actions/workflows/checks.yml/badge.svg)](https://github.com/Tak1naa/SpeedTest/actions/workflows/checks.yml)
+[![Release](https://img.shields.io/github/v/release/Tak1naa/SpeedTest)](https://github.com/Tak1naa/SpeedTest/releases)
+[![License: LGPL-3.0](https://img.shields.io/badge/license-LGPL--3.0-blue.svg)](LICENSE)
+
+[English](README.en.md) · 简体中文 · [参与贡献](CONTRIBUTING.md) · [安全策略](SECURITY.md) · [公开路线图](ROADMAP.md)
+
+A bilingual, self-hosted network speed test built on LibreSpeed/bg6cq, with Redis session limits, bounded transfers, and loopback-first Docker Compose deployment.
+
+基于 [bg6cq/speedtest](https://github.com/bg6cq/speedtest) 的单节点测速站，保留 LibreSpeed 原有前端引擎、Worker 与测速算法，仅增加中文界面、会话保护和部署约束。v0.1.0 是首个非预发布的**源码正式版**；默认仍是回环评估配置，不代表完整公网生产或安全验收。
+
+![桌面界面，未运行测速](docs/screenshots/desktop.png)
+
+<details>
+<summary>移动端与支持弹窗</summary>
+<img src="docs/screenshots/mobile.png" width="320" alt="390px 移动端真实界面，未运行测速" />
+<img src="docs/screenshots/coffee.png" width="680" alt="内嵌不可支付占位图的支持弹窗" />
+</details>
+
+截图来自公开 PHP 页面，不含生产数据、个人收款码或虚构测速值。[生成方式](docs/screenshots/README.md)。
 
 ## 功能与边界
 
@@ -36,7 +54,7 @@ curl --cacert tls/server.crt https://127.0.0.1:8443/health.php
 
 默认只监听回环：HTTP 8080、HTTPS 8443、PHP-FPM 19000、Redis 16379。启动前确认端口未占用。公开副本已去掉私有地址、校园认证脚本和生产运维记录，**不能直接覆盖现有生产部署**。
 
-镜像基础使用可拉取的官方 PHP 8.3 / Redis 7.4 Alpine 标签，Redis 扩展固定 6.1.0。构建会从签名 APK 仓库安装更新；移动标签与 APK 更新意味着构建不保证字节复现。正式部署需记录并固定经检查的基础 digest、产出镜像 ID 与扫描结果，不能把历史镜像的安全结论套用到新构建。
+默认 PHP 基础固定为官方 PHP 8.3.36 FPM Alpine 的 digest，构建拒绝低于修复版的 8.3 或未经验证的其他分支；Redis 使用 7.4 维护标签，扩展固定 6.1.0。未使用的 PHP 上传进度已关闭，Redis 健康超时返回 503。构建会从签名 APK 仓库安装更新，因此仍不保证字节复现。正式部署需记录产出镜像 ID 与新鲜扫描结果，不能把历史镜像的安全结论套用到新构建。
 
 ## 开放给其他设备之前
 
@@ -52,11 +70,16 @@ Redis ACL 默认无密码，仅回环、专用实例、有限命令和键空间�
 
 ```bash
 bash tests/offline-check.sh
+npm run check
 ```
 
-离线检查涵盖浏览器准入/收尾/停止辅助契约、测试 CLI 安全前置、仪表盘尺寸及未改算法的 SHA256。安装 PHP 时也检查 PHP 语法和来源分桶。`tests/browser-smoke.cjs` 是真实 Worker 测试，必须显式传 `--allow-quota-consumption`，并自行安装 Playwright；它会消耗流量和次数，不应默认用于生产监控。
+离线检查涵盖浏览器辅助契约、CLI 安全前置、仪表盘尺寸、上游 SHA256、公开文件边界和独立 Redis Lua 的二十客户端竞争。安装 PHP 时也检查语法和来源分桶。仓库没有 Meson，不引入占位 Meson 测试。
 
-已部署版本有校园 IPv4 真实 Worker、Chrome/Firefox 布局及受控 Ping 并发测试记录。它们不代表这份公开配置已部署或已验证千兆满载。剩余门槛见 [版本说明](CHANGELOG.md)，不要据此宣称任意线路能达到 900–950Mbps、宿舍体验不受影响或全站安全认证通过。
+每次 push/PR 自动执行静态检查、ShellCheck、actionlint、必需的 PHP 检查、官方基础镜像构建、Compose 启动、真实 Chromium Worker/取消/限额、Redis 超时错误处理及只读截图。Actions 使用只读仓库权限与固定 Action 提交，不接触生产环境。[贡献指南](CONTRIBUTING.md) 说明完整命令和通过/跳过的区别。
+
+`tests/browser-smoke.cjs` 必须显式传 `--allow-quota-consumption`；它会消耗流量和次数，不应默认用于生产监控。`npm ci` 安装固定的 Playwright 开发依赖；网站运行本身不需要 Node、npm 或前端打包器。
+
+历史校园测试、当前 CI 与这份公开配置的生产验收分开记录。剩余门槛见 [路线图](ROADMAP.md) 与 [安全策略](SECURITY.md)，不要据此宣称任意线路能达到 900–950Mbps、共享网络不受影响或全站无漏洞。旧 v0.1 预发布保留用于溯源，不作为安全部署版本。
 
 ## 源码与许可
 

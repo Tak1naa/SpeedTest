@@ -1,41 +1,114 @@
 name: Source checks
-on: [push, pull_request]
+on: [push, pull_request, workflow_dispatch]
 permissions:
   contents: read
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   offline:
-    runs-on: ubuntu-latest
+    name: Contracts and static checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '24'
-      - run: bash tests/offline-check.sh
-      - name: Validate Compose (dummy CI salt, no service start)
-        run: ST_LOG_SALT=ci-only-not-a-production-secret docker compose config -q
+          cache: npm
+      - name: Install test tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends redis-server redis-tools shellcheck
+          npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install checksum-verified actionlint
+        run: |
+          lint_dir=$(mktemp -d "$RUNNER_TEMP/actionlint.XXXXXX")
+          curl --fail --location --retry 3 --max-time 90 \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz \
+            -o "$lint_dir/actionlint.tar.gz"
+          printf '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  %s\n' "$lint_dir/actionlint.tar.gz" | sha256sum -c -
+          tar -xzf "$lint_dir/actionlint.tar.gz" -C "$lint_dir" actionlint
+          echo "$lint_dir" >> "$GITHUB_PATH"
+      - name: Offline contracts and static checks
+        run: |
+          command -v shellcheck
+          command -v actionlint
+          npm test
+          npm run check
+      - name: Required PHP syntax and IP checks in pinned runtime
+        run: |
+          docker run --rm --network=none --read-only --cap-drop=ALL \
+            --security-opt=no-new-privileges:true -v "$PWD:/src:ro" -w /src \
+            --entrypoint sh \
+            php:8.3.36-fpm-alpine@sha256:aaf1ad25fc6484613be770743d1038e98e3e7e07409d78b97410eccdf3628f75 \
+            -c 'set -e; find upstream tests -name "*.php" -print0 | xargs -0 -n1 php -l >/dev/null; php tests/ip-contract.php'
+      - name: Validate Compose without starting services
+        run: ST_LOG_SALT=ci-only-not-a-production-secret docker compose -p speedtest-ci config -q
   container:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    name: Container and Chromium integration
+    needs: offline
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     env:
       ST_LOG_SALT: ci-only-not-a-production-secret
     steps:
-      - uses: actions/checkout@v4
-      - name: Build from public bases
-        run: docker compose build --pull
-      - name: Prepare disposable loopback certificate
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Build public images
+        run: docker compose -p speedtest-ci build --pull
+      - name: Generate disposable loopback certificate
         run: |
           mkdir -p tls
           openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
             -subj /CN=localhost -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' \
             -keyout tls/server.key -out tls/server.crt
           chmod 600 tls/server.key
-      - name: Start and check public configuration
+      - name: Start and verify actual runtime
         run: |
-          docker compose up -d --wait --wait-timeout 90
+          docker compose -p speedtest-ci up -d --wait --wait-timeout 90
           curl --fail --cacert tls/server.crt https://127.0.0.1:8443/health.php
-          curl --fail --cacert tls/server.crt https://127.0.0.1:8443/coffee-qr.svg >/dev/null
-          test "$(curl --cacert tls/server.crt -s -o /dev/null -w '%{http_code}' -H 'Host: rejected.example' https://127.0.0.1:8443/)" = 403
-          docker compose exec -T speedtest php -l /speedtest/backend/rate_limit.php
-      - name: Stop disposable services
+          docker compose -p speedtest-ci exec -T speedtest php -r \
+            'exit(PHP_MAJOR_VERSION===8 && PHP_MINOR_VERSION===3 && version_compare(PHP_VERSION,"8.3.36",">=") && !ini_get("session.upload_progress.enabled") && !ini_get("enable_post_data_reading") && !ini_get("file_uploads") ? 0 : 1);'
+      - name: Install disposable browser runtime
+        run: npx playwright install --with-deps chromium --only-shell
+      - name: Real unchanged Worker, cancel, quota and release
+        env:
+          SPEEDTEST_URL: https://127.0.0.1:8443
+          TEST_PRIVATE_CA: '1'
+          TEST_CANCEL: '1'
+          TEST_QUOTAS: '1'
+          ISOLATED_THROTTLE_KIB: '512'
+          BROWSER_RESULT: tests/browser-ci.json
+          TEST_PATH: Disposable CI loopback; throttled transport, not performance evidence
+        run: node tests/browser-smoke.cjs --allow-quota-consumption
+      - name: Strict TLS and error contracts on owned disposable stack
+        run: python3 tests/integration-http.py --allow-disposable-compose
+      - name: Read-only public interface screenshots
+        env:
+          SCREENSHOT_URL: https://127.0.0.1:8443
+          SCREENSHOT_DIR: .screenshots
+          TEST_PRIVATE_CA: '1'
+        run: npm run screenshots
+      - name: Upload sanitized test evidence only
         if: always()
-        run: docker compose down
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: public-loopback-evidence
+          path: |
+            tests/browser-ci.json
+            .screenshots/*.png
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Stop only disposable Compose services
+        if: always()
+        run: docker compose -p speedtest-ci down

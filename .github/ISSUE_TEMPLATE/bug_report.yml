@@ -1,0 +1,32 @@
+name: Bug report / 错误报告
+description: Report a reproducible non-sensitive defect
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "Vulnerabilities: use the private security-report link instead. Never paste credentials, cookies, payment codes, private addresses or raw HARs."
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS/architecture, browser, PHP/Redis versions, IPv4 or IPv6, and local or public path. No IP address is required.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps, expected behavior and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized evidence and tests performed
+      description: Include status codes and skipped/blocked checks. No complete logs or captures.
