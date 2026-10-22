@@ -1,12 +1,12 @@
 name: speedtest
 services:
   speedtest:
-    image: speedtest-web:0.1
+    image: speedtest-web:0.1.0
     build:
       context: ./upstream
       dockerfile: Dockerfile.alpine-candidate
       args:
-        PHP_IMAGE: ${PHP_IMAGE:-php:8.3-fpm-alpine}
+        PHP_IMAGE: ${PHP_IMAGE:-php:8.3.36-fpm-alpine@sha256:aaf1ad25fc6484613be770743d1038e98e3e7e07409d78b97410eccdf3628f75}
     environment:
       MODE: standalone
       TITLE: Tak1na的自建测速
@@ -46,7 +46,7 @@ services:
       driver: journald
 
   redis:
-    image: speedtest-redis:0.1
+    image: speedtest-redis:0.1.0
     build:
       context: ./deploy
       dockerfile: Dockerfile.redis

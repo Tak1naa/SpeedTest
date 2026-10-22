@@ -1,6 +1,7 @@
-# Public standalone build; pin the base digest when promoting a deployment.
-ARG PHP_IMAGE=php:8.3-fpm-alpine
+# Public standalone build; reviewed official PHP security-release index.
+ARG PHP_IMAGE=php:8.3.36-fpm-alpine@sha256:aaf1ad25fc6484613be770743d1038e98e3e7e07409d78b97410eccdf3628f75
 FROM ${PHP_IMAGE}
+RUN php -r 'if (PHP_MAJOR_VERSION !== 8 || PHP_MINOR_VERSION !== 3 || version_compare(PHP_VERSION, "8.3.36", "<")) { fwrite(STDERR, "This release requires patched PHP 8.3.36+ in the 8.3 branch.\n"); exit(1); }'
 RUN apk upgrade --no-cache \
     && apk add --no-cache apache2 apache2-proxy apache2-ssl bash \
     && apk add --no-cache --virtual .redis-build $PHPIZE_DEPS \

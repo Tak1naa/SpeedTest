@@ -3,6 +3,9 @@
 tls/
 node_modules/
 artifacts/
+.screenshots/
+__pycache__/
+*.pyc
 tests/*.json
 *.log
 *.key

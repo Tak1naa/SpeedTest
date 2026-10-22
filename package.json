@@ -1,0 +1,14 @@
+{
+  "name": "tak1na-speedtest",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Development checks for the upstream-based bilingual speed test",
+  "license": "LGPL-3.0",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "test": "bash tests/offline-check.sh",
+    "check": "bash tests/static-check.sh",
+    "screenshots": "node scripts/capture-screenshots.cjs"
+  },
+  "devDependencies": { "playwright": "1.62.1" }
+}
