@@ -65,4 +65,3 @@ with tempfile.TemporaryDirectory(prefix='speedtest-redis-') as directory:
     finally:
         process.terminate()
         process.wait()
-
