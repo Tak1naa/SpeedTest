@@ -38,13 +38,19 @@ Browser tests create real sessions and transfer data. Use only a fresh disposabl
 ```bash
 npx playwright install chromium --only-shell
 SPEEDTEST_URL=https://127.0.0.1:8443 TEST_PRIVATE_CA=1 \
-  TEST_CANCEL=1 TEST_QUOTAS=1 ISOLATED_THROTTLE_KIB=512 \
+  TEST_CANCEL=1 TEST_CANCEL_PHASE=download TEST_QUOTAS=1 ISOLATED_THROTTLE_KIB=512 \
   node tests/browser-smoke.cjs --allow-quota-consumption
 ```
 
 `TEST_PRIVATE_CA=1` is an explicit test-only browser exception for the disposable certificate. Use strict CA validation for command-line HTTP checks and real deployments. Throttled loopback results are not bandwidth claims.
 
+`TEST_CANCEL_PHASE=download` waits for an accepted download stream before cancelling; it is restricted to loopback without a relay. The default admission-only cancellation must not be reported as active-download coverage. Container ownership checks require Python assertions; optimized Python is refused before access.
+
 The Actions workflow uses project name `speedtest-ci` and a documented dummy salt for `tests/integration-http.py --allow-disposable-compose`. That test briefly pauses **only its verified disposable Redis**, checks 503/Ping behavior, and unpauses it in `finally`. Do not run it against your installation. The workflow is the canonical sequence; each job gets a fresh runner.
+
+The hardening candidate also checks PROXY/TLS/original IPv6, source and connection/request limits, payload lease cleanup and wrong-owner finish on that owned fixture. It uses at most 17 local connections and 650 small sequential Ping requests, not a production pressure test. `admission-error-ui.cjs --allow-disposable-ui` mocks backend errors at desktop/compact widths without consuming real quota. See [HARDENING.md](HARDENING.md).
+
+CI now includes `scripts/scan-images.py --allow-local-image-scan` for its three fixed local build images. A missing/expired DB, incomplete inventory or blocking vulnerability fails rather than being silently skipped. An optional existing `--cache-directory` still undergoes freshness/identity validation. `.security/` is generated evidence; never upload raw image configuration or credentials.
 
 For read-only screenshots, run `npm run screenshots` against the loopback preview. It blocks all backend/foreign-origin requests, refuses existing output files and saves the public placeholder, not a payment code. See [screenshot notes](docs/screenshots/README.md).
 

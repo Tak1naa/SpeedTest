@@ -10,6 +10,8 @@ A bilingual, self-hosted network speed test built on [bg6cq/speedtest](https://g
 
 v0.1.0 is the first standard source release, not a certification that an arbitrary public deployment is secure or can sustain gigabit traffic. The supplied configuration remains loopback-only.
 
+The working tree also contains an [unreleased hardening candidate](HARDENING.md): a bounded HAProxy edge, payload leases, coarse prefix/start windows and fresh image gates. This does not mean v0.1.0 or a production installation has been updated.
+
 ![Actual idle desktop interface](docs/screenshots/desktop.png)
 
 <details>
@@ -26,6 +28,7 @@ v0.1.0 is the first standard source release, not a certification that an arbitra
 - Unchanged `/`, `/backend/getIP.php`, `/backend/garbage.php` and `/backend/empty.php`.
 - One active test globally; per IP, two starts per rolling five minutes and five per rolling twelve hours. A successful admission counts even if cancelled or interrupted; there is no global daily transfer cap.
 - IPv4 /32 and IPv6 /128 buckets. Address rotation, proxies and shared NAT limit the usefulness of IP quotas; these are not identity or DDoS controls.
+- Candidate controls add bounded edge requests/connections, in-flight payload slots and wider prefix windows, without sharing the five-per-12h address quota across a campus /64. See [HARDENING.md](HARDENING.md).
 - Sixty-second sessions, owner cleanup/TTL recovery, 2.5GB per direction, 100MiB maximum download request and 32MiB upload request, with phase/request deadlines.
 - Telemetry, results database/sharing and ISP lookups disabled. Uploads are bounded and discarded; temporary storage is tmpfs, not a promise that PHP never buffers data.
 - Accessible native privacy/support dialogs; the public payment image is a **non-payable placeholder**.
@@ -41,7 +44,7 @@ cp .env.example .env
 # Edit .env: set ST_LOG_SALT to the output of openssl rand -hex 32.
 mkdir -p tls
 openssl req -x509 -newkey rsa:2048 -nodes -days 7 \
-  -subj /CN=localhost -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' \
+  -subj /CN=localhost -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1,IP:::1' \
   -keyout tls/server.key -out tls/server.crt
 chmod 600 tls/server.key
 docker compose config -q
@@ -52,13 +55,13 @@ curl --cacert tls/server.crt https://127.0.0.1:8443/health.php
 
 Open `https://127.0.0.1:8443/`. The disposable self-signed certificate is not trusted by browsers by default. Use only an isolated evaluation exception, not a policy of ignoring certificate warnings.
 
-Loopback ports: HTTP 8080, HTTPS 8443, FPM 19000, Redis 16379. Check for conflicts before starting. Stop only this installation with `docker compose down`.
+Loopback ports: edge HTTP 8080 / HTTPS 8443, Apache PROXY backend 18080, FPM 19000, Redis 16379. Check for conflicts before starting. Stop only this installation with `docker compose down`.
 
-The Web base pins the official PHP 8.3.36 security-release digest; its build gate rejects older/untested branches. Redis uses the 7.4 maintenance tag and PECL Redis is 6.1.0. Signed APK updates still make rebuilds potentially different; record reviewed base/output identities and fresh scan results.
+PHP/Redis/HAProxy bases pin reviewed digests; the PHP build rejects older/untested branches and PECL 6.1.0 verifies its archive digest. Signed APK updates still make rebuilds potentially different; record reviewed base/output identities and fresh scan results.
 
 ## Before public exposure
 
-Review both network policy and Apache listener/VHost/source/Host settings, trusted TLS and renewal, management isolation, log limits and real-client behavior. Keep Redis/FPM private and audit the VM's egress to management networks. The supplied journald template applies to the whole VM, not just the app.
+Review network policy, HAProxy listeners/Host/redirect and Apache source/Host checks, trusted TLS and renewal, management isolation, log limits and real-client behavior. Keep Apache PROXY backend, Redis and FPM private; audit VM egress to management networks. Never expose or bypass the plaintext backend. The supplied journald template applies to the whole VM, not just the app.
 
 Do not assume a proxy preserves client identity, forward untrusted client-IP headers, or put measurement traffic behind CDN caching. Scope any load test, set stop thresholds and preserve management access. Read [SECURITY.md](SECURITY.md) for limitations and private vulnerability reporting.
 

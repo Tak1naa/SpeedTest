@@ -65,11 +65,20 @@ jobs:
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Build public images
         run: docker compose -p speedtest-ci build --pull
+      - name: Fresh exact-image scan gate
+        run: |
+          scanner_dir=$(mktemp -d "$RUNNER_TEMP/trivy.XXXXXX")
+          curl --fail --location --retry 3 --max-time 120 \
+            https://github.com/aquasecurity/trivy/releases/download/v0.76.1/trivy_0.76.1_Linux-64bit.tar.gz \
+            -o "$scanner_dir/trivy.tar.gz"
+          printf 'c7cbe3137fb8a48a17574bede3dd6beb16742d1e9772929940fc90082c39d9c0  %s\n' "$scanner_dir/trivy.tar.gz" | sha256sum -c -
+          tar -xzf "$scanner_dir/trivy.tar.gz" -C "$scanner_dir" trivy
+          PATH="$scanner_dir:$PATH" python3 scripts/scan-images.py --allow-local-image-scan
       - name: Generate disposable loopback certificate
         run: |
           mkdir -p tls
           openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
-            -subj /CN=localhost -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' \
+            -subj /CN=localhost -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1,IP:::1' \
             -keyout tls/server.key -out tls/server.crt
           chmod 600 tls/server.key
       - name: Start and verify actual runtime
@@ -85,10 +94,12 @@ jobs:
           SPEEDTEST_URL: https://127.0.0.1:8443
           TEST_PRIVATE_CA: '1'
           TEST_CANCEL: '1'
+          TEST_CANCEL_PHASE: download
           TEST_QUOTAS: '1'
           ISOLATED_THROTTLE_KIB: '512'
           BROWSER_RESULT: tests/browser-ci.json
           TEST_PATH: Disposable CI loopback; throttled transport, not performance evidence
+          EXPECTED_CLIENT_IP: 127.0.0.1
         run: node tests/browser-smoke.cjs --allow-quota-consumption
       - name: Strict TLS and error contracts on owned disposable stack
         run: python3 tests/integration-http.py --allow-disposable-compose
@@ -98,6 +109,11 @@ jobs:
           SCREENSHOT_DIR: .screenshots
           TEST_PRIVATE_CA: '1'
         run: npm run screenshots
+      - name: Mocked admission recovery copy at desktop and compact widths
+        env:
+          SPEEDTEST_URL: https://127.0.0.1:8443
+          TEST_PRIVATE_CA: '1'
+        run: node tests/admission-error-ui.cjs --allow-disposable-ui
       - name: Upload sanitized test evidence only
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
@@ -106,6 +122,8 @@ jobs:
           path: |
             tests/browser-ci.json
             .screenshots/*.png
+            .security/summary.json
+            .security/*.cdx.json
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 7

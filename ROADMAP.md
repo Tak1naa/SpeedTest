@@ -4,6 +4,8 @@ The issue tracker is the source of truth. These are open acceptance gates, not p
 
 Next milestone: [v0.2.0 — public deployment hardening](https://github.com/Tak1naa/SpeedTest/milestone/1).
 
+[Unreleased local candidate](HARDENING.md) addresses parts of #1/#6/#7. Keep those issues open until the relevant public CI, deployment, fairness and real-client acceptance evidence exists; local implementation is not completion of every criterion.
+
 ## Security and correctness first
 
 - [IPv6 prefix budgets and request-level abuse limits — #7](https://github.com/Tak1naa/SpeedTest/issues/7): address rotation, shared-prefix false positives, request/connection work and bounded Redis growth.

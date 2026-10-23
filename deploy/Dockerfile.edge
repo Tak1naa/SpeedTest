@@ -1,0 +1,6 @@
+ARG HAPROXY_IMAGE=haproxy:3.2-alpine@sha256:dfba86f031bd4c9039f10f8cc5de75991d1b6766d5460f0335b980408503baad
+FROM ${HAPROXY_IMAGE}
+# Read root-only TLS material, then drop workers to haproxy via the config.
+USER root
+COPY haproxy.cfg /usr/local/etc/haproxy/haproxy.cfg
+CMD ["haproxy", "-W", "-db", "-f", "/usr/local/etc/haproxy/haproxy.cfg"]
