@@ -47,6 +47,9 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 7 \
   -subj /CN=localhost -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1,IP:::1' \
   -keyout tls/server.key -out tls/server.crt
 chmod 600 tls/server.key
+# 仅 rootful Docker：入口容器的 root 没有 DAC_OVERRIDE，私钥也须归 root。
+# rootless Docker/Podman 则保留当前用户所有权，不执行此行。
+sudo chown 0:0 tls/server.key
 docker compose config -q
 docker compose build --pull
 docker compose up -d

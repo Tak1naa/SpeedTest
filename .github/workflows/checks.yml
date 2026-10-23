@@ -81,6 +81,9 @@ jobs:
             -subj /CN=localhost -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1,IP:::1' \
             -keyout tls/server.key -out tls/server.crt
           chmod 600 tls/server.key
+          # Rootful Docker root has no DAC override in the bounded edge.
+          # A 0600 runner-owned key is deliberately unreadable to that process.
+          sudo chown 0:0 tls/server.key
       - name: Start and verify actual runtime
         run: |
           docker compose -p speedtest-ci up -d --wait --wait-timeout 90

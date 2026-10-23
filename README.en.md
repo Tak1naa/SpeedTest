@@ -47,6 +47,9 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 7 \
   -subj /CN=localhost -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1,IP:::1' \
   -keyout tls/server.key -out tls/server.crt
 chmod 600 tls/server.key
+# Rootful Docker only: container root has no DAC_OVERRIDE; own the key as root.
+# For rootless Docker/Podman keep the calling user's ownership instead.
+sudo chown 0:0 tls/server.key
 docker compose config -q
 docker compose build --pull
 docker compose up -d --wait
