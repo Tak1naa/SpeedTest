@@ -44,7 +44,7 @@ jobs:
             --security-opt=no-new-privileges:true -v "$PWD:/src:ro" -w /src \
             --entrypoint sh \
             php:8.3.36-fpm-alpine@sha256:aaf1ad25fc6484613be770743d1038e98e3e7e07409d78b97410eccdf3628f75 \
-            -c 'set -e; find upstream tests -name "*.php" -print0 | xargs -0 -n1 php -l >/dev/null; php tests/ip-contract.php'
+            -c 'set -e; find upstream tests -name "*.php" -print0 | xargs -0 -n1 php -l >/dev/null; php tests/ip-contract.php; php tests/subpath-cookie.php'
       - name: Validate Compose without starting services
         run: ST_LOG_SALT=ci-only-not-a-production-secret docker compose -p speedtest-ci config -q
   container:

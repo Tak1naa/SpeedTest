@@ -75,6 +75,14 @@ function st_prefix_bucket($ip)
     return st_ip_bucket($ip);
 }
 
+function st_cookie_path()
+{
+    // Narrow delivery to this application on a shared origin. Cookie Path is
+    // not an isolation boundary against another compromised same-origin app.
+    $path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
+    return is_string($path) && strpos($path, '/speedtest/') === 0 ? '/speedtest/' : '/';
+}
+
 function st_log($event, $extra = array())
 {
     // Rejected traffic must not amplify into one journal write per request.
@@ -165,7 +173,7 @@ function st_start_session()
 
     setcookie('ST_SESSION', $token, array(
         'expires' => time() + ST_SESSION_TTL,
-        'path' => '/',
+        'path' => st_cookie_path(),
         'httponly' => true,
         'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
         'samesite' => 'Lax',
@@ -255,7 +263,7 @@ function st_finish_session()
     if ((int)$released === -1) {
         st_error(403, '会话来源不匹配，无法结束其他来源的测速');
     }
-    setcookie('ST_SESSION', '', array('expires' => 1, 'path' => '/', 'httponly' => true, 'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off', 'samesite' => 'Lax'));
+    setcookie('ST_SESSION', '', array('expires' => 1, 'path' => st_cookie_path(), 'httponly' => true, 'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off', 'samesite' => 'Lax'));
     http_response_code(204);
     exit;
 }
