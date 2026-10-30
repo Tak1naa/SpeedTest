@@ -1,4 +1,4 @@
-# Tak1na的自建测速 · v0.1.0
+# Tak1na的自建测速 · v0.2.0
 
 [![Source checks](https://github.com/Tak1naa/SpeedTest/actions/workflows/checks.yml/badge.svg)](https://github.com/Tak1naa/SpeedTest/actions/workflows/checks.yml)
 [![Release](https://img.shields.io/github/v/release/Tak1naa/SpeedTest)](https://github.com/Tak1naa/SpeedTest/releases)
@@ -8,7 +8,9 @@
 
 A bilingual, self-hosted network speed test built on LibreSpeed/bg6cq, with Redis session limits, bounded transfers, and loopback-first Docker Compose deployment.
 
-基于 [bg6cq/speedtest](https://github.com/bg6cq/speedtest) 的单节点测速站，保留 LibreSpeed 原有前端引擎、Worker 与测速算法，仅增加中文界面、会话保护和部署约束。v0.1.0 是首个非预发布的**源码正式版**；默认仍是回环评估配置，不代表完整公网生产或安全验收。
+基于 [bg6cq/speedtest](https://github.com/bg6cq/speedtest) 的单节点测速站，保留 LibreSpeed 原有前端引擎、Worker 与测速算法，增加中文界面、会话保护和部署约束。v0.2.0 是请求保护与子路径支持的**源码正式版**；默认仍是回环评估配置，不代表完整公网生产或千兆满载验收。
+
+本版纳入 [安全加固](HARDENING.md)：HAProxy 薄入口、在途请求租约、宽松前缀短窗保护、Redis 迟到执行防护和新鲜镜像扫描门禁。支持 `/speedtest/` 子路径及限定 Cookie Path。见 [安全审计](docs/SECURITY_AUDIT_2026-10-30.md) 与 [发布说明](RELEASE_NOTES_v0.2.0.md)，源码通过不等于任意生产部署已采用这些配置。
 
 ![桌面界面，未运行测速](docs/screenshots/desktop.png)
 
@@ -26,6 +28,7 @@ A bilingual, self-hosted network speed test built on LibreSpeed/bg6cq, with Redi
 - 保留 `/`、`/backend/getIP.php`、`/backend/garbage.php`、`/backend/empty.php`。
 - Redis 原子准入：全站同时一个测速会话；每 IP 五分钟最多两次、滚动十二小时最多五次。开始成功即计次，取消或失败不退还次数；没有全站日流量限额。
 - IPv4 按 /32，IPv6 按 /128。IPv6 隐私地址轮换、代理及共享 NAT 会影响按 IP 限制的效果，不能将其当实名或防攻击认证。
+- 额外限制入口连接/请求、在途载荷和前缀短窗启动；每 IP 五次/12h 不变，前缀不共用这个低额度。阈值、真实来源及反代信任边界见 [HARDENING.md](HARDENING.md)。
 - 会话最多六十秒，正常结束/取消释放，异常由 TTL 回收。单方向最多 2.5GB，下载单请求最多 100MiB、上传最多 32MiB；阶段和请求均有截止时间。
 - 不启用 telemetry、结果数据库、结果分享或 ISP 查询。上传有界读取后丢弃，PHP 临时目录使用 tmpfs；不承诺 PHP 完全不缓冲。
 - 按钮下的隐私说明、双语标签、原生弹窗及延迟加载的捐助图片。公开版仅包含**不能付款的占位图**，不包含个人收款码。
@@ -41,9 +44,12 @@ cp .env.example .env
 # 编辑 .env，将 ST_LOG_SALT 设为 openssl rand -hex 32 的输出；不要提交此文件。
 mkdir -p tls
 openssl req -x509 -newkey rsa:2048 -nodes -days 7 \
-  -subj /CN=localhost -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' \
+  -subj /CN=localhost -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1,IP:::1' \
   -keyout tls/server.key -out tls/server.crt
 chmod 600 tls/server.key
+# 仅 rootful Docker：入口容器的 root 没有 DAC_OVERRIDE，私钥也须归 root。
+# rootless Docker/Podman 则保留当前用户所有权，不执行此行。
+sudo chown 0:0 tls/server.key
 docker compose config -q
 docker compose build --pull
 docker compose up -d
@@ -52,15 +58,17 @@ curl --cacert tls/server.crt https://127.0.0.1:8443/health.php
 
 访问 `https://127.0.0.1:8443/`。上述自签证书只用于本机验证，浏览器默认不信任；证书信任与公网发布条件需要另行解决，不要关闭正式客户端的 TLS 校验。
 
-默认只监听回环：HTTP 8080、HTTPS 8443、PHP-FPM 19000、Redis 16379。启动前确认端口未占用。公开副本已去掉私有地址、校园认证脚本和生产运维记录，**不能直接覆盖现有生产部署**。
+也可使用 `https://127.0.0.1:8443/speedtest/`；无尾斜杠会跳转，JS、Worker 和 backend 仍使用上游相对路径。子路径会话 Cookie 的 Path 为 `/speedtest/`，旧根路径仍为 `/`。Cookie Path 不隔离同源的其他应用；与不可信应用共用域名时应使用独立子域名或 VM。
 
-默认 PHP 基础固定为官方 PHP 8.3.36 FPM Alpine 的 digest，构建拒绝低于修复版的 8.3 或未经验证的其他分支；Redis 使用 7.4 维护标签，扩展固定 6.1.0。未使用的 PHP 上传进度已关闭，Redis 健康超时返回 503。构建会从签名 APK 仓库安装更新，因此仍不保证字节复现。正式部署需记录产出镜像 ID 与新鲜扫描结果，不能把历史镜像的安全结论套用到新构建。
+默认只监听回环：入口 HTTP 8080、HTTPS 8443、Apache PROXY 后端 18080、PHP-FPM 19000、Redis 16379。启动前确认端口未占用。公开副本已去掉私有地址、校园认证脚本和生产运维记录，**不能直接覆盖现有生产部署**。
+
+PHP、Redis、入口基础均固定 digest；PHP 拒绝旧/未验证分支，扩展 6.1.0 校验固定下载摘要。未使用的 PHP 上传进度已关闭，Redis 健康超时返回 503。构建会从签名 APK 仓库安装更新，因此仍不保证字节复现。正式部署需记录产出镜像 ID 与新鲜扫描结果，不能把历史镜像的安全结论套用到新构建。
 
 ## 开放给其他设备之前
 
 1. 审核网络边界和访问范围，只开放测速入口，不开放 Redis、FPM、SSH 或虚拟化管理端口。
-2. 同时调整 `upstream/docker/alpine-candidate-httpd.conf` 的监听/VHost 和 `speedtest-security.conf` 的来源与 Host 白名单；重新构建。不要单独改一个 `Require` 就视为安全上线。
-3. 配置匹配入口的证书、必要的 HTTP→HTTPS 跳转及续期；HTTPS 直连才会设置 Secure Cookie。不经过 CDN 缓存或隐藏真实来源的代理；未来引入反代必须重新审查 IP 信任边界，不能直接信任转发头。
+2. 审核 `deploy/haproxy.cfg` 的入口监听/Host/跳转与 Apache 来源/Host 白名单；后端 18080 继续仅回环并强制 PROXY，不直接暴露。重新构建并验证原始 IPv4/IPv6 来源，不单独改一个 `Require` 就上线。
+3. 配置匹配入口的证书、HTTP→HTTPS 跳转及续期；TLS 在本机受控入口终止，不经过 CDN 缓存或其他代理出口。不要绕过入口暴露明文 Apache；Secure Cookie 依赖这条受控 TLS/PROXY 链。
 4. 按机器用途配置日志。容器使用 journald，应用日志仅含加盐来源摘要；`deploy/journald-speedtest.conf` 提供 64MB / 七天模板，容量满会更早轮转。仅在独立 VM 审核后装入 `/etc/systemd/journald.conf.d/` 并重启 journald，此限制作用于整个 VM。页面中的保留声明必须与实际配置一致。
 5. 先独立验证入口、限流、取消释放、重启恢复和真实客户端，再进行经过授权、带停止阈值的性能测试。不要在共享网络直接跑无界压测。
 

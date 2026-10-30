@@ -1,7 +1,28 @@
 name: speedtest
 services:
+  edge:
+    image: speedtest-edge:0.2.0
+    build:
+      context: ./deploy
+      dockerfile: Dockerfile.edge
+    network_mode: host
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [SETUID, SETGID]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    pids_limit: 32
+    volumes:
+      - ./tls/server.crt:/run/speedtest-tls/server.crt:ro
+      - ./tls/server.key:/run/speedtest-tls/server.crt.key:ro
+    depends_on:
+      speedtest:
+        condition: service_started
+    logging:
+      driver: journald
   speedtest:
-    image: speedtest-web:0.1.0
+    image: speedtest-web:0.2.0
     build:
       context: ./upstream
       dockerfile: Dockerfile.alpine-candidate
@@ -27,9 +48,6 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-    volumes:
-      - ./tls/server.crt:/run/speedtest-tls/server.crt:ro
-      - ./tls/server.key:/run/speedtest-tls/server.key:ro
     tmpfs:
       - /run/apache2:size=8m
       - /var/lock/apache2:size=8m
@@ -46,12 +64,12 @@ services:
       driver: journald
 
   redis:
-    image: speedtest-redis:0.1.0
+    image: speedtest-redis:0.2.0
     build:
       context: ./deploy
       dockerfile: Dockerfile.redis
       args:
-        REDIS_BASE_IMAGE: ${REDIS_BASE_IMAGE:-redis:7.4-alpine}
+        REDIS_BASE_IMAGE: ${REDIS_BASE_IMAGE:-redis:7.4-alpine@sha256:57e4255cc971b1c8d6f8a6ca283ac01bc3ecdd914273ef6bfaede87aaecd6541}
     command: [redis-server, --bind, 127.0.0.1, --port, "16379", --aclfile, /usr/local/etc/redis/speedtest.acl, --save, "", --appendonly, "no", --maxmemory, 64mb, --maxmemory-policy, noeviction]
     network_mode: host
     restart: unless-stopped

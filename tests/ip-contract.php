@@ -11,3 +11,12 @@ foreach (array(
     if (st_ip_bucket(st_client_ip()) !== $expected) throw new RuntimeException('IP bucket mismatch');
 }
 echo "PASS: IPv4 /32, IPv6 /128, mapped IPv4, forwarded header ignored\n";
+foreach (array(
+    '192.0.2.1' => '192.0.2.1/32',
+    '2001:db8:abcd:1234::1' => '2001:db8:abcd:1234::/64',
+    '2001:db8:abcd:1234:ffff::2' => '2001:db8:abcd:1234::/64',
+    '2001:db8:abcd:1235::1' => '2001:db8:abcd:1235::/64',
+) as $address => $expected) {
+    if (st_prefix_bucket($address) !== $expected) throw new RuntimeException('Prefix bucket mismatch');
+}
+echo "PASS: exact-address binding separated from /64 coarse prefix quota\n";

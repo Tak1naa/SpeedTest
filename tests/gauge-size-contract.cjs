@@ -19,6 +19,7 @@ else{
   original=active.replace(added.join('\n'),removed[0]);
 }
 const candidate=original.replace(removed[0],added.join('\n'));
+assert.equal(active,candidate,'Actual shipped function must contain the accepted fix');
 function fixture(code,dpr,cssWidth,cssHeight){
   let width=0,height=0,writes=0,clears=0;
   const context={clearRect(){clears++;},beginPath(){},arc(){},stroke(){},fillRect(){}};

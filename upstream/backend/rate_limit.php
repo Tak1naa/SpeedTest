@@ -12,6 +12,14 @@ const ST_ROLLING_LIMIT = 5;
 const ST_ROLLING_WINDOW = 43200;
 // Includes reserved bytes in six parallel upstream download requests.
 const ST_DIRECTION_LIMIT = 2500000000;
+const ST_REQUEST_LEASE = 25; // Must remain > FPM request_terminate_timeout (20s).
+const ST_REQUESTS_GLOBAL = 12; // Leave four of sixteen FPM workers for controls.
+const ST_REQUESTS_DOWNLOAD = 8;
+const ST_REQUESTS_UPLOAD = 4;
+const ST_PREFIX_RECENT_LIMIT = 20;
+const ST_PREFIX_HOUR_LIMIT = 120;
+const ST_GLOBAL_RECENT_LIMIT = 30;
+const ST_REDIS_DISPATCH_WINDOW = 0.4; // Less than the 0.5s Redis read timeout.
 
 date_default_timezone_set('Asia/Shanghai');
 
@@ -58,8 +66,28 @@ function st_ip_bucket($ip)
     return $ip.'/32';
 }
 
+function st_prefix_bucket($ip)
+{
+    $packed = @inet_pton($ip);
+    if ($packed !== false && strlen($packed) === 16) {
+        return inet_ntop(substr($packed, 0, 8).str_repeat("\0", 8)).'/64';
+    }
+    return st_ip_bucket($ip);
+}
+
+function st_cookie_path()
+{
+    // Narrow delivery to this application on a shared origin. Cookie Path is
+    // not an isolation boundary against another compromised same-origin app.
+    $path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
+    return is_string($path) && strpos($path, '/speedtest/') === 0 ? '/speedtest/' : '/';
+}
+
 function st_log($event, $extra = array())
 {
+    // Rejected traffic must not amplify into one journal write per request.
+    // Edge counters retain aggregate limits; sampled records contain no tokens.
+    if (in_array($event, array('request_rejected', 'rate_limiter_unavailable'), true) && random_int(0, 63) !== 0) return;
     $payload = array_merge(array(
         'event' => $event,
         'ip_key' => substr(hash('sha256', getenv('ST_LOG_SALT').st_ip_bucket(st_client_ip())), 0, 16),
@@ -110,6 +138,12 @@ function st_error($status, $message, $retryAfter = null)
 
 function st_start_session()
 {
+    // Same-origin fetch sets a non-simple header. Navigation/image requests
+    // without Fetch Metadata cannot silently consume quota or take the lock.
+    // This is a browser CSRF guard, not authentication for raw HTTP clients.
+    if (($_SERVER['HTTP_X_SPEEDTEST_ACTION'] ?? '') !== 'start') {
+        st_error(403, '请从本站页面开始测速');
+    }
     $bucket = st_ip_bucket(st_client_ip());
     $token = rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
     $redis = st_redis();
@@ -119,18 +153,27 @@ function st_start_session()
         'speedtest:rolling12h:'.$bucket,
         'speedtest:session:'.$token,
     );
-    $result = st_eval(file_get_contents(__DIR__.'/session-start.lua'), array_merge($keys, array('speedtest:global')), array($token, ST_RECENT_LIMIT, ST_ROLLING_LIMIT, ST_SESSION_TTL, ST_RECENT_WINDOW, $bucket, microtime(true), ST_ROLLING_WINDOW));
+    $prefix = st_prefix_bucket(st_client_ip());
+    $result = st_eval(file_get_contents(__DIR__.'/session-start.lua'), array_merge($keys, array(
+        'speedtest:global', 'speedtest:prefix5m:'.$prefix,
+        'speedtest:prefix1h:'.$prefix, 'speedtest:starts5m',
+    )), array($token, ST_RECENT_LIMIT, ST_ROLLING_LIMIT, ST_SESSION_TTL,
+        ST_RECENT_WINDOW, $bucket, microtime(true), ST_ROLLING_WINDOW,
+        ST_PREFIX_RECENT_LIMIT, ST_PREFIX_HOUR_LIMIT, ST_GLOBAL_RECENT_LIMIT,
+        microtime(true) + ST_REDIS_DISPATCH_WINDOW));
     if (!is_array($result) || (int)$result[0] !== 1) {
         $reason = is_array($result) && isset($result[1]) ? $result[1] : 'limit';
+        if ($reason === 'unavailable') st_error(503, '测速保护服务暂时不可用', 15);
         $retry = $reason === 'active' ? ST_SESSION_TTL : ST_RECENT_WINDOW;
         if (is_array($result) && isset($result[2])) $retry = max(1, (int)ceil($result[2]));
         $message = $reason === 'rolling' ? '此来源滚动12小时内最多测速5次，请稍后重试' : '已有测速会话或5分钟启动次数已达上限，请稍后重试';
+        if ($reason === 'prefix' || $reason === 'global') $message = '当前网络或本站短时启动较频繁，请稍后重试';
         st_error(429, $message, $retry);
     }
 
     setcookie('ST_SESSION', $token, array(
         'expires' => time() + ST_SESSION_TTL,
-        'path' => '/',
+        'path' => st_cookie_path(),
         'httponly' => true,
         'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
         'samesite' => 'Lax',
@@ -164,10 +207,28 @@ function st_require_payload($direction, $bytes)
     }
 
     $key = 'speedtest:bytes:'.$token.':'.$direction;
-    $allowed = st_eval(file_get_contents(__DIR__.'/payload.lua'), array('speedtest:session:'.$token, 'speedtest:global', $key, 'speedtest:phase:'.$token.':'.$direction), array($token, $bucket, $bytes, ST_DIRECTION_LIMIT, ST_SESSION_TTL, microtime(true), $direction === 'download' ? 12 : 14));
+    $request = bin2hex(random_bytes(16));
+    $slots = array('speedtest:inflight', 'speedtest:inflight:'.$token.':'.$direction);
+    $allowed = st_eval(file_get_contents(__DIR__.'/payload.lua'), array_merge(array(
+        'speedtest:session:'.$token, 'speedtest:global', $key,
+        'speedtest:phase:'.$token.':'.$direction,
+    ), $slots), array($token, $bucket, $bytes, ST_DIRECTION_LIMIT,
+        ST_SESSION_TTL, microtime(true), $direction === 'download' ? 12 : 14,
+        $request, ST_REQUEST_LEASE, ST_REQUESTS_GLOBAL,
+        $direction === 'download' ? ST_REQUESTS_DOWNLOAD : ST_REQUESTS_UPLOAD,
+        microtime(true) + ST_REDIS_DISPATCH_WINDOW));
+    if ((int)$allowed === -2) st_error(503, '测速保护服务暂时不可用', 15);
+    if ((int)$allowed === -1) st_error(429, '测速连接较多，请稍后重试', 1);
     if ((int)$allowed !== 1) {
         st_error(429, '本次测速已达到单方向流量上限，请稍后重试', ST_SESSION_TTL);
     }
+    register_shutdown_function(function () use ($slots, $request) {
+        try {
+            st_redis()->eval(file_get_contents(__DIR__.'/request-finish.lua'), array_merge($slots, array($request)), 2);
+        } catch (Throwable $error) {
+            // Fail closed: lease remains until expiry; never delete other slots.
+        }
+    });
     return $token;
 }
 
@@ -198,8 +259,11 @@ function st_finish_session()
     if (($_SERVER['HTTP_X_SPEEDTEST_ACTION'] ?? '') !== 'finish') st_error(403, '无效的会话操作');
     $token = $_COOKIE['ST_SESSION'] ?? '';
     if (!is_string($token) || !preg_match('/^[A-Za-z0-9_-]{43}$/', $token)) st_error(403, '无效的会话');
-    st_eval(file_get_contents(__DIR__.'/session-finish.lua'), array('speedtest:global', 'speedtest:active:'.st_ip_bucket(st_client_ip()), 'speedtest:session:'.$token), array($token, st_ip_bucket(st_client_ip())));
-    setcookie('ST_SESSION', '', array('expires' => 1, 'path' => '/', 'httponly' => true, 'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off', 'samesite' => 'Lax'));
+    $released = st_eval(file_get_contents(__DIR__.'/session-finish.lua'), array('speedtest:global', 'speedtest:active:'.st_ip_bucket(st_client_ip()), 'speedtest:session:'.$token), array($token, st_ip_bucket(st_client_ip())));
+    if ((int)$released === -1) {
+        st_error(403, '会话来源不匹配，无法结束其他来源的测速');
+    }
+    setcookie('ST_SESSION', '', array('expires' => 1, 'path' => st_cookie_path(), 'httponly' => true, 'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off', 'samesite' => 'Lax'));
     http_response_code(204);
     exit;
 }

@@ -1,4 +1,4 @@
-# SpeedTest · v0.1.0
+# SpeedTest · v0.2.0
 
 [![Source checks](https://github.com/Tak1naa/SpeedTest/actions/workflows/checks.yml/badge.svg)](https://github.com/Tak1naa/SpeedTest/actions/workflows/checks.yml)
 [![Release](https://img.shields.io/github/v/release/Tak1naa/SpeedTest)](https://github.com/Tak1naa/SpeedTest/releases)
@@ -8,7 +8,11 @@ English · [简体中文](README.md) · [Contributing](CONTRIBUTING.md) · [Secu
 
 A bilingual, self-hosted network speed test built on [bg6cq/speedtest](https://github.com/bg6cq/speedtest) / LibreSpeed. It keeps the upstream measurement engine, Worker and endpoint paths, adding a Chinese-facing interface, temporary Redis sessions and bounded transfers.
 
-v0.1.0 is the first standard source release, not a certification that an arbitrary public deployment is secure or can sustain gigabit traffic. The supplied configuration remains loopback-only.
+v0.2.0 is a source release with bounded request admission and optional subpath support, not a certification that arbitrary public deployments are secure or sustain gigabit traffic. The supplied configuration remains loopback-only.
+
+This release includes the [hardening baseline](HARDENING.md): a bounded HAProxy edge, payload leases, coarse prefix/start windows, late-Redis-dispatch protection and fresh image gates. See the [audit](docs/SECURITY_AUDIT_2026-10-30.md) and [release notes](RELEASE_NOTES_v0.2.0.md). A source release is not proof that any particular deployment adopted these controls.
+
+Both `/` and `/speedtest/` preserve upstream relative Worker/backend URLs. Subpath session cookies use `Path=/speedtest/`; legacy root cookies use `/`. Cookie Path does not isolate compromised same-origin applications. Separate origins/VMs remain preferable for untrusted co-tenants.
 
 ![Actual idle desktop interface](docs/screenshots/desktop.png)
 
@@ -26,6 +30,7 @@ v0.1.0 is the first standard source release, not a certification that an arbitra
 - Unchanged `/`, `/backend/getIP.php`, `/backend/garbage.php` and `/backend/empty.php`.
 - One active test globally; per IP, two starts per rolling five minutes and five per rolling twelve hours. A successful admission counts even if cancelled or interrupted; there is no global daily transfer cap.
 - IPv4 /32 and IPv6 /128 buckets. Address rotation, proxies and shared NAT limit the usefulness of IP quotas; these are not identity or DDoS controls.
+- Candidate controls add bounded edge requests/connections, in-flight payload slots and wider prefix windows, without sharing the five-per-12h address quota across a campus /64. See [HARDENING.md](HARDENING.md).
 - Sixty-second sessions, owner cleanup/TTL recovery, 2.5GB per direction, 100MiB maximum download request and 32MiB upload request, with phase/request deadlines.
 - Telemetry, results database/sharing and ISP lookups disabled. Uploads are bounded and discarded; temporary storage is tmpfs, not a promise that PHP never buffers data.
 - Accessible native privacy/support dialogs; the public payment image is a **non-payable placeholder**.
@@ -41,9 +46,12 @@ cp .env.example .env
 # Edit .env: set ST_LOG_SALT to the output of openssl rand -hex 32.
 mkdir -p tls
 openssl req -x509 -newkey rsa:2048 -nodes -days 7 \
-  -subj /CN=localhost -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' \
+  -subj /CN=localhost -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1,IP:::1' \
   -keyout tls/server.key -out tls/server.crt
 chmod 600 tls/server.key
+# Rootful Docker only: container root has no DAC_OVERRIDE; own the key as root.
+# For rootless Docker/Podman keep the calling user's ownership instead.
+sudo chown 0:0 tls/server.key
 docker compose config -q
 docker compose build --pull
 docker compose up -d --wait
@@ -52,13 +60,13 @@ curl --cacert tls/server.crt https://127.0.0.1:8443/health.php
 
 Open `https://127.0.0.1:8443/`. The disposable self-signed certificate is not trusted by browsers by default. Use only an isolated evaluation exception, not a policy of ignoring certificate warnings.
 
-Loopback ports: HTTP 8080, HTTPS 8443, FPM 19000, Redis 16379. Check for conflicts before starting. Stop only this installation with `docker compose down`.
+Loopback ports: edge HTTP 8080 / HTTPS 8443, Apache PROXY backend 18080, FPM 19000, Redis 16379. Check for conflicts before starting. Stop only this installation with `docker compose down`.
 
-The Web base pins the official PHP 8.3.36 security-release digest; its build gate rejects older/untested branches. Redis uses the 7.4 maintenance tag and PECL Redis is 6.1.0. Signed APK updates still make rebuilds potentially different; record reviewed base/output identities and fresh scan results.
+PHP/Redis/HAProxy bases pin reviewed digests; the PHP build rejects older/untested branches and PECL 6.1.0 verifies its archive digest. Signed APK updates still make rebuilds potentially different; record reviewed base/output identities and fresh scan results.
 
 ## Before public exposure
 
-Review both network policy and Apache listener/VHost/source/Host settings, trusted TLS and renewal, management isolation, log limits and real-client behavior. Keep Redis/FPM private and audit the VM's egress to management networks. The supplied journald template applies to the whole VM, not just the app.
+Review network policy, HAProxy listeners/Host/redirect and Apache source/Host checks, trusted TLS and renewal, management isolation, log limits and real-client behavior. Keep Apache PROXY backend, Redis and FPM private; audit VM egress to management networks. Never expose or bypass the plaintext backend. The supplied journald template applies to the whole VM, not just the app.
 
 Do not assume a proxy preserves client identity, forward untrusted client-IP headers, or put measurement traffic behind CDN caching. Scope any load test, set stop thresholds and preserve management access. Read [SECURITY.md](SECURITY.md) for limitations and private vulnerability reporting.
 

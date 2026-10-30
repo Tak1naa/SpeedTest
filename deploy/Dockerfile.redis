@@ -1,10 +1,10 @@
 # Candidate with OS security fixes and a minimal standalone command allowlist.
 # EVAL remains necessary; this is not a Redis Lua vulnerability patch.
-# Update only the scanner-identified runtime libraries from signed stable APK.
-ARG REDIS_BASE_IMAGE=redis:7.4-alpine
+# Upgrade the signed stable runtime set, including musl (not just SSL/zlib).
+ARG REDIS_BASE_IMAGE=redis:7.4-alpine@sha256:57e4255cc971b1c8d6f8a6ca283ac01bc3ecdd914273ef6bfaede87aaecd6541
 FROM ${REDIS_BASE_IMAGE}
 USER root
-RUN apk upgrade --no-cache libcrypto3 libssl3 zlib
+RUN apk upgrade --no-cache
 COPY redis-security-candidate.acl /usr/local/etc/redis/speedtest.acl
 RUN chmod 644 /usr/local/etc/redis/speedtest.acl
 USER redis

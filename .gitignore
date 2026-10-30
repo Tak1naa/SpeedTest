@@ -4,6 +4,7 @@ tls/
 node_modules/
 artifacts/
 .screenshots/
+.security/
 __pycache__/
 *.pyc
 tests/*.json
@@ -15,3 +16,4 @@ tests/*.json
 *.tar.gz
 upstream/assets/coffee-qr.jpg
 upstream/assets/coffee-qr.png
+.scanner-cache/

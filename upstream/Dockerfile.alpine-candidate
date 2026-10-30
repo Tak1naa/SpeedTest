@@ -5,7 +5,10 @@ RUN php -r 'if (PHP_MAJOR_VERSION !== 8 || PHP_MINOR_VERSION !== 3 || version_co
 RUN apk upgrade --no-cache \
     && apk add --no-cache apache2 apache2-proxy apache2-ssl bash \
     && apk add --no-cache --virtual .redis-build $PHPIZE_DEPS \
-    && pecl install redis-6.1.0 \
+    && curl --fail --location --proto '=https' --retry 3 --max-time 90 https://pecl.php.net/get/redis-6.1.0.tgz -o /tmp/redis-6.1.0.tgz \
+    && echo 'f10405f639fe415e9ed4ec99538e72c90694d8dbd62868edcfcd6a453466b48c  /tmp/redis-6.1.0.tgz' | sha256sum -c - \
+    && pecl install /tmp/redis-6.1.0.tgz \
+    && rm /tmp/redis-6.1.0.tgz \
     && docker-php-ext-enable redis \
     && apk del .redis-build
 COPY backend/ /speedtest/backend/

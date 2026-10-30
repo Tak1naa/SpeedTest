@@ -1,5 +1,13 @@
 name: Source checks
-on: [push, pull_request, workflow_dispatch]
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      export_security_database:
+        description: Export the verified public CVE database for an offline deployment audit
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -44,7 +52,7 @@ jobs:
             --security-opt=no-new-privileges:true -v "$PWD:/src:ro" -w /src \
             --entrypoint sh \
             php:8.3.36-fpm-alpine@sha256:aaf1ad25fc6484613be770743d1038e98e3e7e07409d78b97410eccdf3628f75 \
-            -c 'set -e; find upstream tests -name "*.php" -print0 | xargs -0 -n1 php -l >/dev/null; php tests/ip-contract.php'
+            -c 'set -e; find upstream tests -name "*.php" -print0 | xargs -0 -n1 php -l >/dev/null; php tests/ip-contract.php; php tests/subpath-cookie.php'
       - name: Validate Compose without starting services
         run: ST_LOG_SALT=ci-only-not-a-production-secret docker compose -p speedtest-ci config -q
   container:
@@ -65,13 +73,39 @@ jobs:
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Build public images
         run: docker compose -p speedtest-ci build --pull
+      - name: Fresh exact-image scan gate
+        run: |
+          scanner_dir=$(mktemp -d "$RUNNER_TEMP/trivy.XXXXXX")
+          curl --fail --location --retry 3 --max-time 120 \
+            https://github.com/aquasecurity/trivy/releases/download/v0.76.1/trivy_0.76.1_Linux-64bit.tar.gz \
+            -o "$scanner_dir/trivy.tar.gz"
+          printf 'c7cbe3137fb8a48a17574bede3dd6beb16742d1e9772929940fc90082c39d9c0  %s\n' "$scanner_dir/trivy.tar.gz" | sha256sum -c -
+          tar -xzf "$scanner_dir/trivy.tar.gz" -C "$scanner_dir" trivy
+          PATH="$scanner_dir:$PATH" python3 scripts/scan-images.py --allow-local-image-scan --cache-directory .scanner-cache
+      - name: Checksum offline audit database (manual release audit only)
+        if: github.event_name == 'workflow_dispatch' && inputs.export_security_database
+        run: |
+          cd .scanner-cache/db
+          sha256sum metadata.json trivy.db > SHA256SUMS
+      - name: Export public database for offline deployment audit
+        if: github.event_name == 'workflow_dispatch' && inputs.export_security_database
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: verified-public-vulnerability-database
+          path: .scanner-cache/db/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
       - name: Generate disposable loopback certificate
         run: |
           mkdir -p tls
           openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
-            -subj /CN=localhost -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' \
+            -subj /CN=localhost -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1,IP:::1' \
             -keyout tls/server.key -out tls/server.crt
           chmod 600 tls/server.key
+          # Rootful Docker root has no DAC override in the bounded edge.
+          # A 0600 runner-owned key is deliberately unreadable to that process.
+          sudo chown 0:0 tls/server.key
       - name: Start and verify actual runtime
         run: |
           docker compose -p speedtest-ci up -d --wait --wait-timeout 90
@@ -85,19 +119,38 @@ jobs:
           SPEEDTEST_URL: https://127.0.0.1:8443
           TEST_PRIVATE_CA: '1'
           TEST_CANCEL: '1'
+          TEST_CANCEL_PHASE: download
           TEST_QUOTAS: '1'
           ISOLATED_THROTTLE_KIB: '512'
           BROWSER_RESULT: tests/browser-ci.json
           TEST_PATH: Disposable CI loopback; throttled transport, not performance evidence
+          EXPECTED_CLIENT_IP: 127.0.0.1
         run: node tests/browser-smoke.cjs --allow-quota-consumption
       - name: Strict TLS and error contracts on owned disposable stack
         run: python3 tests/integration-http.py --allow-disposable-compose
+      - name: Real unchanged Worker under subpath over IPv6 loopback
+        env:
+          SPEEDTEST_URL: https://[::1]:8443/speedtest
+          TEST_PRIVATE_CA: '1'
+          ISOLATED_THROTTLE_KIB: '512'
+          BROWSER_RESULT: tests/browser-subpath-ci.json
+          TEST_PATH: Disposable IPv6 loopback subpath; not performance evidence
+          EXPECTED_CLIENT_IP: ::1
+        run: |
+          # The preceding deliberate rate test used this loopback source.
+          sleep 11
+          node tests/browser-smoke.cjs --allow-quota-consumption
       - name: Read-only public interface screenshots
         env:
           SCREENSHOT_URL: https://127.0.0.1:8443
           SCREENSHOT_DIR: .screenshots
           TEST_PRIVATE_CA: '1'
         run: npm run screenshots
+      - name: Mocked admission recovery copy at desktop and compact widths
+        env:
+          SPEEDTEST_URL: https://127.0.0.1:8443
+          TEST_PRIVATE_CA: '1'
+        run: node tests/admission-error-ui.cjs --allow-disposable-ui
       - name: Upload sanitized test evidence only
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
@@ -105,7 +158,10 @@ jobs:
           name: public-loopback-evidence
           path: |
             tests/browser-ci.json
+            tests/browser-subpath-ci.json
             .screenshots/*.png
+            .security/summary.json
+            .security/*.cdx.json
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 7

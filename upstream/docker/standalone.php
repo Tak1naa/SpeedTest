@@ -59,11 +59,11 @@ s.start=function(){
     admitting=true; admissionCancelled=false;
     announcedPhase=null;
     announce('正在申请测速会话。 / Requesting a test session.');
-    fetch('backend/getIP.php', {cache:'no-store'}).then(function(response){
+    fetch('backend/getIP.php', {cache:'no-store', headers:{'X-Speedtest-Action':'start'}}).then(function(response){
         if(!response.ok){
             var messages={
                 403:'无法开始测速：会话或访问权限无效，请重新打开页面。 / Cannot start: invalid session or access denied. Reload the page.',
-                429:'暂时无法开始测速：已有会话、5分钟内最多2次，或滚动12小时内最多5次，请稍后重试。 / Cannot start: a test is active, or the 2-per-5-minute / 5-per-12-hour limit was reached. Retry later.',
+                429:'暂时无法开始测速：已有会话，或触发来源、网络或访问频率限制，请稍后重试。 / Cannot start: a test is active or a source, network or request-rate limit was reached. Retry later.',
                 503:'测速保护服务暂时不可用，请稍后重试。 / Test protection is unavailable. Try again later.'
             };
             throw new Error(messages[response.status] || '测速服务异常，请稍后重试。 / The test service returned an error. Try again later.');

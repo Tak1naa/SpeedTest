@@ -22,13 +22,21 @@ const {chromium, firefox} = require(process.env.PLAYWRIGHT_MODULE || 'playwright
 const assert = require('node:assert/strict');
 const {startAndVerifyAdmission}=require('./browser-admission.cjs');
 const {classifyCleanupRejections}=require('./browser-cleanup.cjs');
-const base = process.env.SPEEDTEST_URL || 'https://127.0.0.1:8443';
+const base = (process.env.SPEEDTEST_URL || 'https://127.0.0.1:8443').replace(/\/+$/,'');
+const cookieScope = base+'/';
 const kind = process.env.BROWSER_KIND || 'chromium';
 const type = kind === 'firefox' ? firefox : chromium;
 const throttleKiB=Number(process.env.ISOLATED_THROTTLE_KIB||0);
+const cancelPhase=process.env.TEST_CANCEL_PHASE || 'admission';
+assert(['admission','download'].includes(cancelPhase),'Unsupported cancellation phase');
+if(cancelPhase==='download') {
+  const target=new URL(base);
+  assert(process.env.TEST_CANCEL==='1' && ['127.0.0.1','[::1]','localhost'].includes(target.hostname) && !process.env.TEST_PROXY,
+    'Download cancellation probe is restricted to an explicitly disposable loopback run');
+}
 if(process.env.ISOLATED_THROTTLE_KIB!==undefined){
   const target=new URL(base);
-  assert(kind==='chromium' && target.hostname==='127.0.0.1' && !process.env.TEST_PROXY);
+  assert(kind==='chromium' && ['127.0.0.1','[::1]'].includes(target.hostname) && !process.env.TEST_PROXY);
   assert(Number.isInteger(throttleKiB) && throttleKiB>=64 && throttleKiB<=2048,'bounded loopback-only throttle');
 }
 (async () => {
@@ -61,7 +69,7 @@ if(process.env.ISOLATED_THROTTLE_KIB!==undefined){
   const diagnosticStarted=Date.now();
   const pingRequests=[];
   page.on('requestfinished',request=>{
-    if(request.method()!=='GET' || new URL(request.url()).pathname!=='/backend/empty.php') return;
+    if(request.method()!=='GET' || new URL(request.url()).pathname!==new URL(base+'/backend/empty.php').pathname) return;
     // Test-only timing evidence, no URL/query, source IP, headers or cookies.
     // This is HTTP resource timing, not a replacement for upstream ping/jitter.
     const timing=request.timing();
@@ -96,7 +104,15 @@ if(process.env.ISOLATED_THROTTLE_KIB!==undefined){
     assert(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1));
     if(process.env.TEST_CANCEL === '1') {
       phase='cancel admission';
+      const payload=cancelPhase==='download' ? page.waitForResponse(r=>
+        new URL(r.url()).pathname===new URL(base+'/backend/garbage.php').pathname && r.status()===200,{timeout:30000}) : null;
+      if(payload) payload.catch(()=>{});
       await startAndVerifyAdmission(page,process.env.EXPECTED_CLIENT_IP);
+      if(payload) {
+        phase='cancel active download';
+        await payload;
+        await page.waitForFunction(()=>uiData && uiData.testState===1,null,{timeout:5000});
+      }
       const finished=page.waitForResponse(r=>r.url().includes('/backend/getIP.php') && r.request().method()==='POST' && r.status()===204);
       await page.locator('#startStopBtn').click();
       await finished;
@@ -105,12 +121,12 @@ if(process.env.ISOLATED_THROTTLE_KIB!==undefined){
     const started=Date.now();
     phase='full admission';
     await startAndVerifyAdmission(page,process.env.EXPECTED_CLIENT_IP);
-    const cookie=(await context.cookies(base)).find(c=>c.name==='ST_SESSION');
+    const cookie=(await context.cookies(cookieScope)).find(c=>c.name==='ST_SESSION');
     assert(cookie && cookie.httpOnly && cookie.sameSite==='Lax');
     if(base.startsWith('https://')) assert(cookie.secure,'TLS session cookie must be Secure');
     if(process.env.TEST_QUOTAS==='1') {
       const competing=await browser.newContext({...testProxy,ignoreHTTPSErrors:process.env.TEST_PRIVATE_CA==='1'});
-      try {assert.equal((await competing.request.get(base+'/backend/getIP.php')).status(),429);}
+      try {assert.equal((await competing.request.get(base+'/backend/getIP.php',{headers:{'X-Speedtest-Action':'start'}})).status(),429);}
       finally {await competing.close();}
     }
     const finished=page.waitForResponse(r=>r.url().includes('/backend/getIP.php') && r.request().method()==='POST' && r.status()===204,{timeout:75000});
@@ -136,12 +152,13 @@ if(process.env.ISOLATED_THROTTLE_KIB!==undefined){
     assert.equal(errors,0);
     const {cleanupResponses,unexpected}=classifyCleanupRejections(rejected,responseDiagnostics);
     assert.deepEqual(unexpected,[]);
-    assert(!(await context.cookies(base)).some(c=>c.name==='ST_SESSION'));
+    assert(!(await context.cookies(cookieScope)).some(c=>c.name==='ST_SESSION'));
     if(process.env.TEST_QUOTAS==='1' && process.env.TEST_CANCEL==='1') {
-      assert.equal((await context.request.get(base+'/backend/getIP.php')).status(),429);
+      assert.equal((await context.request.get(base+'/backend/getIP.php',{headers:{'X-Speedtest-Action':'start'}})).status(),429);
     }
     const result={browser:kind,version:browser.version(),checkedAt:new Date().toISOString(),sourceVerified:Boolean(process.env.EXPECTED_CLIENT_IP),testRelay:Boolean(process.env.TEST_PROXY),privateCaTestException:process.env.TEST_PRIVATE_CA==='1',mobileEmulation:mobile,cancelAndRetest:process.env.TEST_CANCEL==='1',quotaChecks:process.env.TEST_QUOTAS==='1',pressure:pressureResult,cleanupResponses,unexpectedBackendRejections:unexpected,pingRequests,elapsedSeconds:(Date.now()-started)/1000,...data,status:'passed',path:process.env.TEST_PATH || 'network path unspecified; verify route independently'};
     result.transportThrottleKiB=throttleKiB;
+    result.cancelPhase=process.env.TEST_CANCEL==='1' ? cancelPhase : null;
     if(process.env.BROWSER_RESULT) fs.writeFileSync(process.env.BROWSER_RESULT,JSON.stringify(result,null,2)+'\n',{flag:'wx',mode:0o600});
     console.log(JSON.stringify(result));
   } catch(error) {

@@ -16,7 +16,7 @@ async function runPressure(browser,base) {
       while(next<plan.length) {
         const item=plan[next++];
         const before=Date.now();
-        const response=item.upload ? await context.request.post(base+item.path,{data:Buffer.alloc(1024),headers:{'Content-Type':'application/octet-stream'},timeout:10000}) : await context.request.get(base+item.path,{timeout:10000});
+        const response=item.upload ? await context.request.post(base+item.path,{data:Buffer.alloc(1024),headers:{'Content-Type':'application/octet-stream'},timeout:10000}) : await context.request.get(base+item.path,{headers:{'X-Speedtest-Action':'start'},timeout:10000});
         const body=await response.body();
         assert.equal(response.status(),item.status,`unexpected protection response for ${item.path}`);
         assert(body.length<=4096,'Rejected payload must not generate a high-volume response');

@@ -1,1 +1,1 @@
-user default on nopass resetkeys ~speedtest:* resetchannels -@all +ping +hello +quit +select +client|setname +client|setinfo +get +set +exists +del +expire +ttl +pttl +incrby +zadd +zcard +zrange +zcount +zremrangebyscore +eval +evalsha +scan +info +role +config|get +acl|dryrun
+user default on nopass resetkeys ~speedtest:* resetchannels -@all +ping +hello +quit +select +client|setname +client|setinfo +get +set +exists +del +expire +ttl +pttl +incrby +zadd +zrem +zcard +zrange +zcount +zremrangebyscore +eval +evalsha +time +scan +info +role +config|get +acl|dryrun

@@ -15,6 +15,7 @@ function getChunkCount()
 {
     if (
         !array_key_exists('ckSize', $_GET)
+        || !is_string($_GET['ckSize'])
         || !ctype_digit($_GET['ckSize'])
         || (int) $_GET['ckSize'] <= 0
     ) {
@@ -64,4 +65,5 @@ for ($i = 0; $i < $chunks; $i++) {
     if (connection_aborted() || !st_stream_active($token, 'download')) break;
     echo $data;
     flush();
+    if (connection_aborted() || !st_stream_active($token, 'download')) break;
 }

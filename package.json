@@ -1,6 +1,6 @@
 {
   "name": "tak1na-speedtest",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Development checks for the upstream-based bilingual speed test",
   "license": "LGPL-3.0",
