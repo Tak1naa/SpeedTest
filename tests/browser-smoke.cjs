@@ -35,7 +35,7 @@ if(cancelPhase==='download') {
 }
 if(process.env.ISOLATED_THROTTLE_KIB!==undefined){
   const target=new URL(base);
-  assert(kind==='chromium' && target.hostname==='127.0.0.1' && !process.env.TEST_PROXY);
+  assert(kind==='chromium' && ['127.0.0.1','[::1]'].includes(target.hostname) && !process.env.TEST_PROXY);
   assert(Number.isInteger(throttleKiB) && throttleKiB>=64 && throttleKiB<=2048,'bounded loopback-only throttle');
 }
 (async () => {
