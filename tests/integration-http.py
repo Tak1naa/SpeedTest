@@ -39,10 +39,11 @@ def main():
             c.request(method, path, body=body, headers=headers or {})
             r = c.getresponse(); r.read()
             assert r.status == expected, (path.split('?')[0], r.status, expected)
+            return {key.lower():value for key,value in r.getheaders()}
         finally: c.close()
     request('/health.php', 200)
     request('/speedtest/health.php', 200)
-    request('/speedtest', 308)
+    assert request('/speedtest', 308)['location'] == '/speedtest/', 'TLS-aware relative redirect required'
     request('/speedtest/speedtest.js', 200)
     request('/speedtest/speedtest_worker.js', 200)
     request('/speedtest/coffee-qr.svg', 200)

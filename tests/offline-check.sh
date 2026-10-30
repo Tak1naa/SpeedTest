@@ -8,6 +8,7 @@ node tests/browser-admission-contract.cjs
 node tests/browser-cleanup-contract.cjs
 node tests/browser-stop-contract.cjs
 node tests/browser-run-guard-contract.cjs
+node tests/browser-subpath-contract.cjs
 node tests/gauge-size-contract.cjs
 sha256sum -c deploy/UPSTREAM_CORE.sha256
 python3 tests/repository-contract.py

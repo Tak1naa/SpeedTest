@@ -22,7 +22,8 @@ const {chromium, firefox} = require(process.env.PLAYWRIGHT_MODULE || 'playwright
 const assert = require('node:assert/strict');
 const {startAndVerifyAdmission}=require('./browser-admission.cjs');
 const {classifyCleanupRejections}=require('./browser-cleanup.cjs');
-const base = process.env.SPEEDTEST_URL || 'https://127.0.0.1:8443';
+const base = (process.env.SPEEDTEST_URL || 'https://127.0.0.1:8443').replace(/\/+$/,'');
+const cookieScope = base+'/';
 const kind = process.env.BROWSER_KIND || 'chromium';
 const type = kind === 'firefox' ? firefox : chromium;
 const throttleKiB=Number(process.env.ISOLATED_THROTTLE_KIB||0);
@@ -68,7 +69,7 @@ if(process.env.ISOLATED_THROTTLE_KIB!==undefined){
   const diagnosticStarted=Date.now();
   const pingRequests=[];
   page.on('requestfinished',request=>{
-    if(request.method()!=='GET' || new URL(request.url()).pathname!=='/backend/empty.php') return;
+    if(request.method()!=='GET' || new URL(request.url()).pathname!==new URL(base+'/backend/empty.php').pathname) return;
     // Test-only timing evidence, no URL/query, source IP, headers or cookies.
     // This is HTTP resource timing, not a replacement for upstream ping/jitter.
     const timing=request.timing();
@@ -104,7 +105,7 @@ if(process.env.ISOLATED_THROTTLE_KIB!==undefined){
     if(process.env.TEST_CANCEL === '1') {
       phase='cancel admission';
       const payload=cancelPhase==='download' ? page.waitForResponse(r=>
-        new URL(r.url()).pathname==='/backend/garbage.php' && r.status()===200,{timeout:30000}) : null;
+        new URL(r.url()).pathname===new URL(base+'/backend/garbage.php').pathname && r.status()===200,{timeout:30000}) : null;
       if(payload) payload.catch(()=>{});
       await startAndVerifyAdmission(page,process.env.EXPECTED_CLIENT_IP);
       if(payload) {
@@ -120,7 +121,7 @@ if(process.env.ISOLATED_THROTTLE_KIB!==undefined){
     const started=Date.now();
     phase='full admission';
     await startAndVerifyAdmission(page,process.env.EXPECTED_CLIENT_IP);
-    const cookie=(await context.cookies(base)).find(c=>c.name==='ST_SESSION');
+    const cookie=(await context.cookies(cookieScope)).find(c=>c.name==='ST_SESSION');
     assert(cookie && cookie.httpOnly && cookie.sameSite==='Lax');
     if(base.startsWith('https://')) assert(cookie.secure,'TLS session cookie must be Secure');
     if(process.env.TEST_QUOTAS==='1') {
@@ -151,7 +152,7 @@ if(process.env.ISOLATED_THROTTLE_KIB!==undefined){
     assert.equal(errors,0);
     const {cleanupResponses,unexpected}=classifyCleanupRejections(rejected,responseDiagnostics);
     assert.deepEqual(unexpected,[]);
-    assert(!(await context.cookies(base)).some(c=>c.name==='ST_SESSION'));
+    assert(!(await context.cookies(cookieScope)).some(c=>c.name==='ST_SESSION'));
     if(process.env.TEST_QUOTAS==='1' && process.env.TEST_CANCEL==='1') {
       assert.equal((await context.request.get(base+'/backend/getIP.php',{headers:{'X-Speedtest-Action':'start'}})).status(),429);
     }

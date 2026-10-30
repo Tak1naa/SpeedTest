@@ -12,6 +12,8 @@ host network 仍不是隔离不可信 VM 共用者的边界。同 VM 的受陷�
 
 入口只保留SETUID/SETGID，不靠DAC_OVERRIDE读取其他用户的0600文件。rootful Docker的TLS私钥必须为root所有、0600；rootless容器则由映射到容器root的主机用户持有。生成证书时应按运行模式设置所有权，不能通过改成0644或恢复广泛capabilities绕过权限。
 
+上述公开默认使用高端口，不需要绑定特权端口能力。生产改用80/443且宿主 `ip_unprivileged_port_start` 大于相应端口时，入口可能另需最小的 `NET_BIND_SERVICE`；先检查并在独立夹具验证，不全局降低宿主限制、不恢复 NET_ADMIN 或 DAC_OVERRIDE。
+
 ## 候选阈值
 
 - 入口：最多 64 个连接/SSL连接、两线程；每地址最多 16 连接、每前缀最多 32 连接。IPv4 前缀为 /32，IPv6 为 /64。
