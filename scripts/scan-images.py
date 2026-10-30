@@ -33,9 +33,9 @@ def main():
     def stamp(value):
         return datetime.fromisoformat(value.replace('Z', '+00:00'))
 
-    images = {'web': ('speedtest-web:0.1.0', 50),
-              'redis': ('speedtest-redis:0.1.0', 19),
-              'edge': ('speedtest-edge:security-candidate', 10)}
+    images = {'web': ('speedtest-web:0.2.0', 50),
+              'redis': ('speedtest-redis:0.2.0', 19),
+              'edge': ('speedtest-edge:0.2.0', 10)}
     summaries = []
     blocked = []
     with tempfile.TemporaryDirectory(prefix='speedtest-scan-') as directory:

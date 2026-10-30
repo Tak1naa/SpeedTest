@@ -1,10 +1,10 @@
 # Public maintenance roadmap / 公开维护路线图
 
-The issue tracker is the source of truth. These are open acceptance gates, not promises that v0.1.0 already passes them. Contributions and sanitized compatibility reports are welcome in Chinese or English; no completion dates or service SLA are promised.
+The issue tracker is the source of truth. These are open acceptance gates, not promises that v0.2.0 already passes every production condition. Contributions and sanitized compatibility reports are welcome in Chinese or English; no completion dates or service SLA are promised.
 
-Next milestone: [v0.2.0 — public deployment hardening](https://github.com/Tak1naa/SpeedTest/milestone/1).
+Current hardening milestone: [v0.2.0 — public deployment hardening](https://github.com/Tak1naa/SpeedTest/milestone/1). Outstanding real-environment work remains open after the source release.
 
-[Unreleased local candidate](HARDENING.md) addresses parts of #1/#6/#7. Keep those issues open until the relevant public CI, deployment, fairness and real-client acceptance evidence exists; local implementation is not completion of every criterion.
+[v0.2.0 baseline](HARDENING.md) addresses parts of #1/#6/#7 with public CI and native fixture evidence. Keep issues open when broader deployment, fairness or real-client criteria remain; implementation is not completion of every criterion.
 
 ## Security and correctness first
 

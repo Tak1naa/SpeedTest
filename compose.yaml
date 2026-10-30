@@ -1,7 +1,7 @@
 name: speedtest
 services:
   edge:
-    image: speedtest-edge:security-candidate
+    image: speedtest-edge:0.2.0
     build:
       context: ./deploy
       dockerfile: Dockerfile.edge
@@ -22,7 +22,7 @@ services:
     logging:
       driver: journald
   speedtest:
-    image: speedtest-web:0.1.0
+    image: speedtest-web:0.2.0
     build:
       context: ./upstream
       dockerfile: Dockerfile.alpine-candidate
@@ -64,7 +64,7 @@ services:
       driver: journald
 
   redis:
-    image: speedtest-redis:0.1.0
+    image: speedtest-redis:0.2.0
     build:
       context: ./deploy
       dockerfile: Dockerfile.redis

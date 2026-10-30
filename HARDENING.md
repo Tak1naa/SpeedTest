@@ -1,6 +1,6 @@
-# Unreleased hardening candidate / 未发布安全修复候选
+# v0.2.0 hardening baseline / 安全加固基线
 
-这些变更位于 v0.1.0 之后的修复候选分支，不是已发布版本，也不表示已替换维护者的生产服务。没有修改 LibreSpeed 测速引擎、Worker 或既有 URL。
+这些变更作为 v0.2.0 源码的一部分交付；生产采用情况必须单独验证。没有修改 LibreSpeed 测速引擎、Worker 或既有 URL。另支持 `/speedtest/` 子路径及限定 Cookie Path，不能将 Cookie Path 当作同源安全边界。
 
 ## 请求路径与信任边界
 

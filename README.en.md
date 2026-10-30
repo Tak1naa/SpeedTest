@@ -1,4 +1,4 @@
-# SpeedTest · v0.1.0
+# SpeedTest · v0.2.0
 
 [![Source checks](https://github.com/Tak1naa/SpeedTest/actions/workflows/checks.yml/badge.svg)](https://github.com/Tak1naa/SpeedTest/actions/workflows/checks.yml)
 [![Release](https://img.shields.io/github/v/release/Tak1naa/SpeedTest)](https://github.com/Tak1naa/SpeedTest/releases)
@@ -8,9 +8,11 @@ English · [简体中文](README.md) · [Contributing](CONTRIBUTING.md) · [Secu
 
 A bilingual, self-hosted network speed test built on [bg6cq/speedtest](https://github.com/bg6cq/speedtest) / LibreSpeed. It keeps the upstream measurement engine, Worker and endpoint paths, adding a Chinese-facing interface, temporary Redis sessions and bounded transfers.
 
-v0.1.0 is the first standard source release, not a certification that an arbitrary public deployment is secure or can sustain gigabit traffic. The supplied configuration remains loopback-only.
+v0.2.0 is a source release with bounded request admission and optional subpath support, not a certification that arbitrary public deployments are secure or sustain gigabit traffic. The supplied configuration remains loopback-only.
 
-The working tree also contains an [unreleased hardening candidate](HARDENING.md): a bounded HAProxy edge, payload leases, coarse prefix/start windows and fresh image gates. This does not mean v0.1.0 or a production installation has been updated.
+This release includes the [hardening baseline](HARDENING.md): a bounded HAProxy edge, payload leases, coarse prefix/start windows, late-Redis-dispatch protection and fresh image gates. See the [audit](docs/SECURITY_AUDIT_2026-10-30.md) and [release notes](RELEASE_NOTES_v0.2.0.md). A source release is not proof that any particular deployment adopted these controls.
+
+Both `/` and `/speedtest/` preserve upstream relative Worker/backend URLs. Subpath session cookies use `Path=/speedtest/`; legacy root cookies use `/`. Cookie Path does not isolate compromised same-origin applications. Separate origins/VMs remain preferable for untrusted co-tenants.
 
 ![Actual idle desktop interface](docs/screenshots/desktop.png)
 
