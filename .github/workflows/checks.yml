@@ -1,5 +1,13 @@
 name: Source checks
-on: [push, pull_request, workflow_dispatch]
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      export_security_database:
+        description: Export the verified public CVE database for an offline deployment audit
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -73,7 +81,21 @@ jobs:
             -o "$scanner_dir/trivy.tar.gz"
           printf 'c7cbe3137fb8a48a17574bede3dd6beb16742d1e9772929940fc90082c39d9c0  %s\n' "$scanner_dir/trivy.tar.gz" | sha256sum -c -
           tar -xzf "$scanner_dir/trivy.tar.gz" -C "$scanner_dir" trivy
-          PATH="$scanner_dir:$PATH" python3 scripts/scan-images.py --allow-local-image-scan
+          PATH="$scanner_dir:$PATH" python3 scripts/scan-images.py --allow-local-image-scan --cache-directory .scanner-cache
+      - name: Checksum offline audit database (manual release audit only)
+        if: github.event_name == 'workflow_dispatch' && inputs.export_security_database
+        run: |
+          cd .scanner-cache/db
+          sha256sum metadata.json trivy.db > SHA256SUMS
+      - name: Export public database for offline deployment audit
+        if: github.event_name == 'workflow_dispatch' && inputs.export_security_database
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: verified-public-vulnerability-database
+          path: .scanner-cache/db/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
       - name: Generate disposable loopback certificate
         run: |
           mkdir -p tls

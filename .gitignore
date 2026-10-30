@@ -16,3 +16,4 @@ tests/*.json
 *.tar.gz
 upstream/assets/coffee-qr.jpg
 upstream/assets/coffee-qr.png
+.scanner-cache/
